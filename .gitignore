@@ -1,0 +1,9 @@
+# Compiled executable
+kwatch
+
+# Auto-generated eBPF bindings and object files from bpf2go
+bpf_*.go
+bpf_*.o
+
+# macOS junk (just in case)
+.DS_Store
