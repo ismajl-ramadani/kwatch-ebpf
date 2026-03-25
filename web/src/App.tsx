@@ -11,7 +11,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { useStream } from "@/hooks/useStream"
+import { useStream, type KernelEvent } from "@/hooks/useStream"
 
 const DEFAULT_URL = "http://localhost:8080/stream"
 
@@ -47,6 +47,30 @@ function Sparkline({ buckets }: { buckets: number[] }) {
   )
 }
 
+type TypeFilter = "all" | "exec" | "network" | "exit" | "open"
+
+const TYPE_CONFIG = {
+  exec:    { label: "EXEC",    cls: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
+  exit:    { label: "EXIT",    cls: "text-slate-400   bg-slate-400/10   border-slate-400/20"   },
+  connect: { label: "CONNECT", cls: "text-blue-400    bg-blue-400/10    border-blue-400/20"    },
+  accept:  { label: "ACCEPT",  cls: "text-amber-400   bg-amber-400/10   border-amber-400/20"   },
+  open:    { label: "OPEN",    cls: "text-rose-400    bg-rose-400/10    border-rose-400/20"     },
+} as const
+
+function getDetail(ev: KernelEvent): string | null {
+  switch (ev.type) {
+    case "exec": {
+      const bin = ev.path || ev.exe || ""
+      if (bin && ev.args) return `${bin} ${ev.args}`
+      return bin || ev.args || null
+    }
+    case "exit":    return ev.duration ? `lived ${ev.duration}` : null
+    case "connect": return ev.dst_addr ? `→ ${ev.dst_addr}` : null
+    case "accept":  return ev.dst_addr ? `← ${ev.dst_addr}` : null
+    case "open":    return ev.path || null
+  }
+}
+
 export default function App() {
   const [url, setUrl] = useState(
     () => localStorage.getItem("kwatch-url") ?? DEFAULT_URL,
@@ -54,6 +78,7 @@ export default function App() {
   const [urlInput, setUrlInput] = useState(url)
   const [showSettings, setShowSettings] = useState(false)
   const [filter, setFilter] = useState("")
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [uptimeSecs, setUptimeSecs] = useState(0)
   const uptimeStartRef = useRef<number | null>(null)
 
@@ -78,15 +103,16 @@ export default function App() {
     return () => clearInterval(timer)
   }, [])
 
-  const filtered = useMemo(
-    () =>
-      filter
-        ? events.filter((e) =>
-            e.command.toLowerCase().includes(filter.toLowerCase()),
-          )
-        : events,
-    [events, filter],
-  )
+  const filtered = useMemo(() => {
+    return events.filter((e) => {
+      if (typeFilter === "exec"    && e.type !== "exec")    return false
+      if (typeFilter === "exit"    && e.type !== "exit")    return false
+      if (typeFilter === "open"    && e.type !== "open")    return false
+      if (typeFilter === "network" && e.type !== "connect" && e.type !== "accept") return false
+      if (filter && !e.command.toLowerCase().includes(filter.toLowerCase())) return false
+      return true
+    })
+  }, [events, filter, typeFilter])
 
   const uniqueCommands = useMemo(
     () => new Set(events.map((e) => e.command)).size,
@@ -252,14 +278,36 @@ export default function App() {
         ))}
       </div>
 
-      {/* Filter bar */}
-      <div className="border-b border-border px-4 py-2 flex items-center gap-2 shrink-0">
+      {/* Type filter pills */}
+      <div className="border-b border-border px-4 py-2 flex items-center gap-1.5 shrink-0">
+        {(["all", "exec", "network", "exit", "open"] as const).map((t) => {
+          const active = typeFilter === t
+          const pillCls =
+            t === "all"     ? "text-primary      bg-primary/10      border-primary/30"       :
+            t === "exec"    ? "text-emerald-400  bg-emerald-400/10  border-emerald-400/30"   :
+            t === "network" ? "text-blue-400     bg-blue-400/10     border-blue-400/30"      :
+            t === "open"    ? "text-rose-400     bg-rose-400/10     border-rose-400/30"      :
+                              "text-slate-400    bg-slate-400/10    border-slate-400/30"
+          return (
+            <button
+              key={t}
+              onClick={() => setTypeFilter(t)}
+              className={cn(
+                "text-[9px] tracking-widest px-2 py-0.5 rounded border transition-colors",
+                active ? pillCls : "border-border text-muted-foreground hover:text-foreground hover:border-border/80",
+              )}
+            >
+              {t.toUpperCase()}
+            </button>
+          )
+        })}
+        <div className="flex-1" />
         <Search className="size-3 text-muted-foreground shrink-0" />
         <input
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="flex-1 bg-transparent text-xs focus:outline-none placeholder:text-muted-foreground"
+          className="bg-transparent text-xs focus:outline-none placeholder:text-muted-foreground w-40"
           placeholder="Filter by command..."
         />
         {filter && (
@@ -292,6 +340,9 @@ export default function App() {
               <th className="px-4 py-2 text-left font-medium text-muted-foreground text-[9px] tracking-widest w-36">
                 TIME
               </th>
+              <th className="px-4 py-2 text-left font-medium text-muted-foreground text-[9px] tracking-widest w-24">
+                TYPE
+              </th>
               <th className="px-4 py-2 text-left font-medium text-muted-foreground text-[9px] tracking-widest w-20">
                 PID
               </th>
@@ -304,7 +355,7 @@ export default function App() {
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={3}
+                  colSpan={4}
                   className="text-center text-muted-foreground py-20 text-xs"
                 >
                   {status === "connecting"
@@ -317,27 +368,41 @@ export default function App() {
                 </td>
               </tr>
             ) : (
-              filtered.map((event, i) => (
-                <tr
-                  key={event.id}
-                  className={cn(
-                    "border-b border-border/40 hover:bg-muted/20 transition-colors",
-                    i === 0 &&
-                      !paused &&
-                      "animate-in slide-in-from-top-1 fade-in duration-150",
-                  )}
-                >
-                  <td className="px-4 py-1.5 tabular-nums text-muted-foreground">
-                    {formatTime(event.ts)}
-                  </td>
-                  <td className="px-4 py-1.5 tabular-nums text-muted-foreground">
-                    {event.pid}
-                  </td>
-                  <td className="px-4 py-1.5 text-foreground font-medium">
-                    {event.command}
-                  </td>
-                </tr>
-              ))
+              filtered.map((event, i) => {
+                const cfg = TYPE_CONFIG[event.type]
+                const detail = getDetail(event)
+                return (
+                  <tr
+                    key={event.id}
+                    className={cn(
+                      "border-b border-border/40 hover:bg-muted/20 transition-colors",
+                      i === 0 &&
+                        !paused &&
+                        "animate-in slide-in-from-top-1 fade-in duration-150",
+                    )}
+                  >
+                    <td className="px-4 py-1.5 tabular-nums text-muted-foreground">
+                      {formatTime(event.ts)}
+                    </td>
+                    <td className="px-4 py-1.5">
+                      <span className={cn("text-[9px] tracking-widest px-1.5 py-0.5 rounded border", cfg.cls)}>
+                        {cfg.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-1.5 tabular-nums text-muted-foreground">
+                      {event.pid}
+                    </td>
+                    <td className="px-4 py-1.5">
+                      <div className="font-medium text-foreground">{event.command}</div>
+                      {detail && (
+                        <div className="text-[10px] text-muted-foreground/70 mt-0.5 truncate max-w-md">
+                          {detail}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
