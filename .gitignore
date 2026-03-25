@@ -7,3 +7,6 @@ bpf_*.o
 
 # macOS junk (just in case)
 .DS_Store
+
+# others
+.fuse_hidden*
