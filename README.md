@@ -2,9 +2,7 @@
 
 > An experimentation project — built to experiment/learn eBPF, not for production use.
 
-eBPF-based kernel process monitor with a live web dashboard. Hooks into kernel tracepoints to capture process execution, network connections, and sensitive file access.
-
-![dashboard](sc.png)
+eBPF-based kernel process monitor. Hooks into kernel tracepoints to capture process execution, network connections, and sensitive file access.
 
 ## What it traces
 
@@ -27,11 +25,16 @@ Process events are enriched from `/proc/[pid]/` (exe, cwd, ppid, memory, fd coun
 ## Run
 
 ```bash
+# generate ebpf bytecode
+go generate ./internal/bpf/
+```
+
+```bash
 # build
-go generate && go build -o kwatch
+go build -o kwatch ./cmd/kwatch/
 
 # run (requires root for eBPF)
-sudo ./kwatch
+sudo ./kwatch start
 
 # frontend
 cd web && bun dev
