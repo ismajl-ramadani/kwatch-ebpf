@@ -2,12 +2,25 @@
 
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
+#include <bpf/bpf_core_read.h>
 // ARM64/x86 are little-endian; network byte order is big-endian.
 // __builtin_bswap* are compiler builtins — no extra header needed.
 #define bpf_ntohs(x) __builtin_bswap16(x)
 #define bpf_ntohl(x) __builtin_bswap32(x)
 
 #define AF_INET 2
+
+// CO-RE stubs — lets the BPF verifier resolve task_struct field offsets
+// at load time via BTF, so this works across kernel versions.
+struct task_struct {
+    int tgid;
+    struct task_struct *real_parent;
+} __attribute__((preserve_access_index));
+
+static __always_inline __u32 get_ppid(void) {
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+    return BPF_CORE_READ(task, real_parent, tgid);
+}
 
 // Minimal inline sockaddr_in — avoids pulling in <linux/in.h>.
 struct sockaddr4 {
@@ -68,10 +81,13 @@ struct execve_ctx {
 
 struct event {
     __u32 pid;
+    __u32 ppid;          // parent PID — grabbed in-kernel, no /proc race
     __u32 uid;
     __u32 gid;
     __u32 type;          // 0 = exec, 1 = exit
+    __u32 _pad;          // alignment for duration_ns
     __u64 duration_ns;   // lifetime (exit events only)
+    __u64 cgroup_id;     // maps to container/pod when running under cgroups v2
     __u8  comm[16];
     __u8  filename[256];
     __u8  args[512]; // argv[1..8], fixed 64-byte slots, null-terminated (exec only)
@@ -114,6 +130,7 @@ int trace_execve(struct execve_ctx *ctx) {
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     e->pid = pid_tgid >> 32;
+    e->ppid = get_ppid();
 
     __u64 uid_gid = bpf_get_current_uid_gid();
     e->uid = uid_gid & 0xFFFFFFFF;
@@ -121,6 +138,7 @@ int trace_execve(struct execve_ctx *ctx) {
 
     e->type = 0; // exec
     e->duration_ns = 0;
+    e->cgroup_id = bpf_get_current_cgroup_id();
 
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
     bpf_probe_read_user_str(e->filename, sizeof(e->filename), ctx->filename);
@@ -164,6 +182,7 @@ int trace_connect(struct connect_ctx *ctx) {
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     e->pid = pid_tgid >> 32;
+    e->ppid = get_ppid();
 
     __u64 uid_gid = bpf_get_current_uid_gid();
     e->uid = uid_gid & 0xFFFFFFFF;
@@ -171,6 +190,7 @@ int trace_connect(struct connect_ctx *ctx) {
 
     e->type = 2; // connect
     e->duration_ns = 0;
+    e->cgroup_id = bpf_get_current_cgroup_id();
 
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
     e->filename[0] = '\0';
@@ -214,6 +234,7 @@ static __always_inline int emit_accept(__s64 ret) {
     if (!e) return 0;
 
     e->pid = bpf_get_current_pid_tgid() >> 32;
+    e->ppid = get_ppid();
 
     __u64 uid_gid = bpf_get_current_uid_gid();
     e->uid = uid_gid & 0xFFFFFFFF;
@@ -221,6 +242,7 @@ static __always_inline int emit_accept(__s64 ret) {
 
     e->type = 3; // accept
     e->duration_ns = 0;
+    e->cgroup_id = bpf_get_current_cgroup_id();
 
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
     e->filename[0] = '\0';
@@ -272,6 +294,7 @@ int trace_exit(void *ctx) {
         return 0;
 
     e->pid = pid;
+    e->ppid = get_ppid();
 
     __u64 uid_gid = bpf_get_current_uid_gid();
     e->uid = uid_gid & 0xFFFFFFFF;
@@ -279,6 +302,7 @@ int trace_exit(void *ctx) {
 
     e->type = 1; // exit
     e->duration_ns = duration_ns;
+    e->cgroup_id = bpf_get_current_cgroup_id();
 
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
     e->filename[0] = '\0';
@@ -293,6 +317,7 @@ int trace_openat(struct openat_ctx *ctx) {
     if (!e) return 0;
 
     e->pid = bpf_get_current_pid_tgid() >> 32;
+    e->ppid = get_ppid();
 
     __u64 uid_gid = bpf_get_current_uid_gid();
     e->uid = uid_gid & 0xFFFFFFFF;
@@ -300,6 +325,7 @@ int trace_openat(struct openat_ctx *ctx) {
 
     e->type = 4; // open
     e->duration_ns = 0;
+    e->cgroup_id = bpf_get_current_cgroup_id();
 
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
     bpf_probe_read_user_str(e->filename, sizeof(e->filename), ctx->filename);

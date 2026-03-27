@@ -8,9 +8,10 @@ import (
 type EventJSON struct {
 	Type     string `json:"type"`
 	PID      uint32 `json:"pid"`
-	PPID     int    `json:"ppid,omitempty"`
+	PPID     uint32 `json:"ppid,omitempty"`
 	UID      uint32 `json:"uid"`
 	GID      uint32 `json:"gid"`
+	CgroupID uint64 `json:"cgroup_id,omitempty"`
 	Command  string `json:"command"`
 	Path     string `json:"path,omitempty"`
 	Exe      string `json:"exe,omitempty"`

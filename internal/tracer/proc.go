@@ -11,7 +11,6 @@ import (
 
 // procInfo holds data collected from /proc/[pid]/
 type procInfo struct {
-	ppid     int
 	exe      string
 	cwd      string
 	memoryKB int
@@ -34,18 +33,12 @@ func enrichFromProc(pid uint32) procInfo {
 		info.cwd = cwd
 	}
 
-	// /proc/[pid]/status — ppid and memory usage
+	// /proc/[pid]/status — memory usage
 	if f, err := os.Open(filepath.Join(base, "status")); err == nil {
 		defer f.Close()
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			line := scanner.Text()
-			if strings.HasPrefix(line, "PPid:") {
-				fields := strings.Fields(line)
-				if len(fields) >= 2 {
-					info.ppid, _ = strconv.Atoi(fields[1])
-				}
-			}
 			if strings.HasPrefix(line, "VmRSS:") {
 				fields := strings.Fields(line)
 				if len(fields) >= 2 {

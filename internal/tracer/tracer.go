@@ -19,10 +19,13 @@ import (
 // The raw memory mapping from C
 type bpfEvent struct {
 	Pid        uint32
+	Ppid       uint32
 	Uid        uint32
 	Gid        uint32
 	Type       uint32
+	Pad        uint32
 	DurationNs uint64
+	CgroupId   uint64
 	Comm       [16]byte
 	Filename   [256]byte
 	Args       [512]byte
@@ -98,7 +101,7 @@ func Start(eventChan chan<- models.EventJSON, stopChan <-chan struct{}) error {
 
 		comm := string(bytes.TrimRight(raw.Comm[:], "\x00"))
 		path := string(bytes.TrimRight(raw.Filename[:], "\x00"))
-		ev := models.EventJSON{PID: raw.Pid, UID: raw.Uid, GID: raw.Gid, Command: comm}
+		ev := models.EventJSON{PID: raw.Pid, PPID: raw.Ppid, UID: raw.Uid, GID: raw.Gid, Command: comm, CgroupID: raw.CgroupId}
 
 		switch raw.Type {
 		case 4: // open
@@ -129,7 +132,6 @@ func Start(eventChan chan<- models.EventJSON, stopChan <-chan struct{}) error {
 			ev.MemoryKB = proc.memoryKB
 			ev.FDCount = proc.fdCount
 			ev.Args = strings.Join(argParts, " ")
-			ev.PPID = proc.ppid
 		}
 
 		select {
