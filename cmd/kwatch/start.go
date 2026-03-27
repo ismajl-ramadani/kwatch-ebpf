@@ -10,18 +10,18 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ismajl-ramadani/kwatch-ebpf/internal/models"
+	"github.com/ismajl-ramadani/kwatch-ebpf/internal/snapshot"
 	"github.com/ismajl-ramadani/kwatch-ebpf/internal/tracer"
-	"github.com/ismajl-ramadani/kwatch-ebpf/internal/tree"
 )
 
 var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the eBPF agent and stream JSON logs to stdout",
 	Run: func(cmd *cobra.Command, args []string) {
-		treeManager := tree.NewTreeManager("/proc")
-		if snapshot, err := treeManager.BuildSnapshot(); err != nil {
-			log.Printf("Warning: failed to build process tree snapshot: %v", err)
-		} else if raw, err := json.Marshal(snapshot); err == nil {
+		engine := snapshot.NewSnapshotEngine("/proc")
+		if snap, err := engine.Build(); err != nil {
+			log.Printf("Warning: failed to build process snapshot: %v", err)
+		} else if raw, err := json.Marshal(snap); err == nil {
 			fmt.Println(string(raw))
 		}
 
@@ -38,9 +38,7 @@ var startCmd = &cobra.Command{
 
 		go func() {
 			for ev := range eventChan {
-				diff := treeManager.ProcessEvent(ev)
-
-				if data, err := json.Marshal(diff); err == nil {
+				if data, err := json.Marshal(ev); err == nil {
 					fmt.Println(string(data))
 				}
 			}
