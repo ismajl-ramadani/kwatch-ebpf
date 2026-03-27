@@ -19,8 +19,7 @@ Process events are enriched from `/proc/[pid]/` (exe, cwd, ppid, memory, fd coun
 ## Stack
 
 - **Kernel:** C + eBPF, compiled via [cilium/ebpf](https://github.com/cilium/ebpf) / bpf2go
-- **Backend:** Go, SSE stream on `:8080/stream`
-- **Frontend:** React 19, Vite, Tailwind 4, Shadcn
+- **Backend:** Go
 
 ## Run
 
