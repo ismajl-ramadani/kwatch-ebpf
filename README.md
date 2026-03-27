@@ -35,6 +35,11 @@ sudo ./kwatch start
 
 ```
 
+## Test
+```bash
+sudo go test -tags=integration ./internal/tracer/ -v
+```
+
 Requires Linux 5.8+ with BTF enabled (`CONFIG_DEBUG_INFO_BTF=y`).
 
 ## References
