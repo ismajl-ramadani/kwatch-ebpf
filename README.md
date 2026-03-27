@@ -26,17 +26,13 @@ Process events are enriched from `/proc/[pid]/` (exe, cwd, ppid, memory, fd coun
 ```bash
 # generate ebpf bytecode
 go generate ./internal/bpf/
-```
 
-```bash
 # build
 go build -o kwatch ./cmd/kwatch/
 
 # run (requires root for eBPF)
 sudo ./kwatch start
 
-# frontend
-cd web && bun dev
 ```
 
 Requires Linux 5.8+ with BTF enabled (`CONFIG_DEBUG_INFO_BTF=y`).
