@@ -1,0 +1,4 @@
+outputs:
+  prometheus:
+    enabled: true
+    port: 2112

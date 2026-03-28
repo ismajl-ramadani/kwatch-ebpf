@@ -32,8 +32,50 @@ go build -o kwatch ./cmd/kwatch/
 
 # run (requires root for eBPF)
 sudo ./kwatch start
+```
+
+## Outputs
+
+By default, events stream to stdout as JSON. You can enable additional outputs via a config file:
+
+```bash
+sudo ./kwatch start --config=config.yaml
+```
+
+### Config format
+
+```yaml
+outputs:
+  prometheus:
+    enabled: true
+    port: 2112
+  websocket:
+    enabled: true
+    port: 8080
+  mqtt:
+    enabled: true
+    broker: "tcp://localhost:1883"
+    topic: "kwatch/events"
+```
+
+All outputs are optional. Omit any section you don't need. Stdout is always active.
+
+### Prometheus
+
+Exposes a `/metrics` endpoint with low-cardinality counters. Labels are limited to `type` and `command` to avoid cardinality explosion (no PIDs, paths, or addresses).
 
 ```
+kwatch_events_total{type="exec", command="bash"} 47
+kwatch_events_total{type="open", command="nginx"} 312
+```
+
+### Websocket
+
+Serves a websocket at `/ws`. On connect, clients receive the full process snapshot, then a continuous stream of flat JSON events.
+
+### MQTT
+
+Publishes each event as a JSON string to the configured broker and topic.
 
 ## Test
 ```bash

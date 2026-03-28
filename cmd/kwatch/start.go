@@ -1,28 +1,55 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/ismajl-ramadani/kwatch-ebpf/internal/config"
 	"github.com/ismajl-ramadani/kwatch-ebpf/internal/models"
+	"github.com/ismajl-ramadani/kwatch-ebpf/internal/outputs"
 	"github.com/ismajl-ramadani/kwatch-ebpf/internal/snapshot"
 	"github.com/ismajl-ramadani/kwatch-ebpf/internal/tracer"
 )
 
+var configPath string
+
 var startCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start the eBPF agent and stream JSON logs to stdout",
+	Short: "Start the eBPF agent and stream events",
 	Run: func(cmd *cobra.Command, args []string) {
+		mux := outputs.NewMultiplexer()
+		mux.Add(outputs.NewStdoutOutput())
+
+		if configPath != "" {
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				log.Fatalf("Failed to load config: %v", err)
+			}
+
+			if cfg.Outputs.Prometheus != nil && cfg.Outputs.Prometheus.Enabled {
+				mux.Add(outputs.NewPrometheusOutput(cfg.Outputs.Prometheus))
+			}
+			if cfg.Outputs.Websocket != nil && cfg.Outputs.Websocket.Enabled {
+				mux.Add(outputs.NewWebsocketOutput(cfg.Outputs.Websocket))
+			}
+			if cfg.Outputs.MQTT != nil && cfg.Outputs.MQTT.Enabled {
+				mux.Add(outputs.NewMqttOutput(cfg.Outputs.MQTT))
+			}
+		}
+
+		if err := mux.InitAll(); err != nil {
+			log.Fatalf("Failed to initialize outputs: %v", err)
+		}
+		defer mux.CloseAll()
+
 		engine := snapshot.NewSnapshotEngine("/proc")
 		if snap, err := engine.Build(); err != nil {
 			log.Printf("Warning: failed to build process snapshot: %v", err)
-		} else if raw, err := json.Marshal(snap); err == nil {
-			fmt.Println(string(raw))
+		} else {
+			mux.SendSnapshot(snap)
 		}
 
 		eventChan := make(chan models.EventJSON, 1000)
@@ -38,9 +65,7 @@ var startCmd = &cobra.Command{
 
 		go func() {
 			for ev := range eventChan {
-				if data, err := json.Marshal(ev); err == nil {
-					fmt.Println(string(data))
-				}
+				mux.SendEvent(ev)
 			}
 		}()
 
@@ -51,5 +76,6 @@ var startCmd = &cobra.Command{
 }
 
 func init() {
+	startCmd.Flags().StringVar(&configPath, "config", "", "Path to config YAML file")
 	rootCmd.AddCommand(startCmd)
 }
